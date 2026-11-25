@@ -1,5 +1,7 @@
+import asyncio
 import os
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 from maxo.dialogs.api.entities import MediaId
 from maxo.dialogs.context.media_storage import MediaIdStorage
@@ -88,3 +90,44 @@ async def test_missing_file_keeps_cached_media_id(tmp_path: Path) -> None:
 
     # mtime неизвестен - считаем кэш валидным
     assert await storage.get_media_id(path=file, url=None, type=TYPE) == media_id
+
+
+async def test_save_media_id_offloads_file_stat_to_thread(tmp_path: Path) -> None:
+    file = tmp_path / "pic.png"
+    file.write_bytes(b"a")
+    storage = MediaIdStorage()
+
+    with patch(
+        "maxo.dialogs.context.media_storage.asyncio.to_thread",
+        new=AsyncMock(wraps=asyncio.to_thread),
+    ) as to_thread_mock:
+        await storage.save_media_id(
+            path=file,
+            url=None,
+            type=TYPE,
+            media_id=MediaId(token="tok"),  # noqa: S106,
+        )
+
+    to_thread_mock.assert_awaited_once_with(
+        MediaIdStorage._get_file_mtime_sync,
+        file,
+    )
+
+
+async def test_get_media_id_offloads_file_stat_to_thread(tmp_path: Path) -> None:
+    file = tmp_path / "pic.png"
+    file.write_bytes(b"a")
+    storage = MediaIdStorage()
+    media_id = MediaId(token="tok")  # noqa: S106
+    await storage.save_media_id(path=file, url=None, type=TYPE, media_id=media_id)
+
+    with patch(
+        "maxo.dialogs.context.media_storage.asyncio.to_thread",
+        new=AsyncMock(wraps=asyncio.to_thread),
+    ) as to_thread_mock:
+        assert await storage.get_media_id(path=file, url=None, type=TYPE) == media_id
+
+    to_thread_mock.assert_awaited_once_with(
+        MediaIdStorage._get_file_mtime_sync,
+        file,
+    )
