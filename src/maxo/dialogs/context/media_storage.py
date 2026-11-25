@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import NamedTuple
 
@@ -34,15 +35,18 @@ class MediaIdStorage(MediaIdStorageProtocol):
             return None
 
         if cached.mtime is not None:
-            mtime = self._get_file_mtime(path)
+            mtime = await self._get_file_mtime(path)
             if mtime is not None and mtime != cached.mtime:
                 return None
         return cached.media_id
 
-    def _get_file_mtime(self, path: Path | str | None) -> float | None:
+    async def _get_file_mtime(self, path: Path | str | None) -> float | None:
         if not path:
             return None
-        path = Path(path)
+        return await asyncio.to_thread(self._get_file_mtime_sync, Path(path))
+
+    @staticmethod
+    def _get_file_mtime_sync(path: Path) -> float | None:
         if not path.exists():
             return None
         return path.stat().st_mtime
@@ -59,5 +63,5 @@ class MediaIdStorage(MediaIdStorageProtocol):
         key = (str(path) if path else None, url, type)
         self.cache[key] = CachedMediaId(
             media_id,
-            self._get_file_mtime(path),
+            await self._get_file_mtime(path),
         )
