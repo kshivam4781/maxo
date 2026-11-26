@@ -506,11 +506,6 @@ class TestMessageChanged:
 
         assert manager._message_changed(new, old)
 
-    def test_can_edit_is_always_true(self) -> None:
-        manager = MessageManager(media_id_storage=AsyncMock())
-
-        assert manager._can_edit(_make_new_message(), _make_old_message())
-
 
 class TestShowMessage:
     async def test_edits_when_message_changed(self) -> None:
@@ -527,6 +522,24 @@ class TestShowMessage:
 
         bot.edit_message.assert_awaited_once()
         assert result.text == "new"
+
+    async def test_changed_message_is_always_edited_in_place(self) -> None:
+        """Issue #258: убран мёртвый _can_edit (всегда True), ветка
+        remove+resend была недостижима. show_message всегда правит сообщение
+        на месте и никогда не удаляет старое, когда текст изменился."""
+        manager = StaticAttachmentsMessageManager(media_id_storage=AsyncMock())
+        bot = AsyncMock()
+        bot.edit_message = AsyncMock()
+        bot.get_message_by_id = AsyncMock(return_value=_make_message("55", "new"))
+
+        await manager.show_message(
+            bot,
+            _make_new_message("new"),
+            _make_old_message("55", text="old"),
+        )
+
+        bot.delete_message.assert_not_awaited()
+        bot.edit_message.assert_awaited_once()
 
 
 class TestRemoveKbd:
