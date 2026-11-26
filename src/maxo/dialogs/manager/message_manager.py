@@ -1,6 +1,6 @@
 import warnings
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import cast
 
 from maxo import Bot, loggers
 from maxo.dialogs.api.entities import (
@@ -32,15 +32,6 @@ from maxo.types import (
 )
 from maxo.types.facades.attachments import AttachmentsFacade, MediaInput
 from maxo.utils.upload_media import FSInputFile
-
-SEND_METHODS = {
-    AttachmentType.AUDIO: "send_audio",
-    AttachmentType.IMAGE: "send_photo",
-    AttachmentType.VIDEO: "send_video",
-    AttachmentType.STICKER: "send_sticker",
-}
-
-INPUT_MEDIA_TYPES: dict[Any, Any] = {}
 
 _INVALID_QUERY_ID_MSG = (
     "query is too old and response timeout expired or query id is invalid"
@@ -101,9 +92,6 @@ class MessageManager(MessageManagerProtocol):
 
         return self.had_media(old_message) or self.need_media(new_message)
 
-    def _can_edit(self, new_message: NewMessage, old_message: OldMessage) -> bool:
-        return True
-
     async def show_message(
         self,
         bot: Bot,
@@ -136,10 +124,6 @@ class MessageManager(MessageManagerProtocol):
             # nothing changed: text, keyboard or media
             return old_message
 
-        if not self._can_edit(new_message, old_message):
-            await self.remove_message_safe(bot, old_message, new_message)
-            sent_message = await self.send_message(bot, new_message)
-            return _combine(new_message, sent_message)
         sent_message = await self.edit_message_safe(bot, new_message, old_message)
         return _combine(new_message, sent_message)
 
