@@ -103,20 +103,25 @@ class Payload(MaxoType, slots=False):
 
     def pack(self) -> str:
         result = [self.__prefix__]
-        for key, value in dataclasses.asdict(self).items():
-            encoded = self._encode_value(key, value)
+        for field in dataclasses.fields(self):
+            value = getattr(self, field.name)
+            encoded = self._encode_value(field.name, value)
             if self.__separator__ in encoded:
                 msg = (
                     f"Separator symbol {self.__separator__!r} can not be used "
-                    f"in value {key}={encoded!r}"
+                    f"in value {field.name}={encoded!r}"
                 )
                 raise ValueError(msg)
             result.append(encoded)
         payload = self.__separator__.join(result)
-        if len(payload.encode()) > MAX_PAYLOAD_LENGTH:
+        # MAX Bot API ограничивает длину payload кнопки символами
+        # ({"type": "string", "maxLength": 1024} в max-swagger.json), а не
+        # байтами UTF-8 — считаем так же, иначе кириллица/другие
+        # многобайтовые символы режутся вдвое короче реального лимита.
+        if len(payload) > MAX_PAYLOAD_LENGTH:
             msg = (
                 f"Resulted callback data is too long! "
-                f"len({payload!r}.encode()) > {MAX_PAYLOAD_LENGTH}"
+                f"len({payload!r}) > {MAX_PAYLOAD_LENGTH}"
             )
             raise ValueError(msg)
         return payload
