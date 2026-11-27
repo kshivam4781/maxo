@@ -14,6 +14,7 @@ from maxo.enums import ChatType
 from maxo.integrations.magic_filter import MagicFilter
 from maxo.omit import Omitted
 from maxo.routing.filters.payload import (
+    MAX_PAYLOAD_LENGTH,
     MessageCallbackFilter,
     Payload,
     _check_field_is_nullable,
@@ -191,6 +192,45 @@ class TestPayload:
 
         with pytest.raises(ValueError, match="Resulted callback data is too long"):
             LongPayload(data=long_str).pack()
+
+    def test_cyrillic_payload_within_character_limit(self) -> None:
+        # Регрессия: раньше лимит MAX_PAYLOAD_LENGTH проверялся по байтам
+        # UTF-8 (`len(payload.encode())`), хотя API ограничивает payload
+        # кнопки символами (`maxLength` в max-swagger.json). Кириллица
+        # занимает 2 байта на символ, так что валидные payload'ы вдвое
+        # короче реального лимита отвергались.
+        class CyrillicPayload(Payload, prefix="cyr"):
+            data: str
+
+        cyrillic_str = "ё" * 1000  # 1000 символов, но 2000 байт в UTF-8
+        payload = CyrillicPayload(data=cyrillic_str)
+
+        packed = payload.pack()  # не должно кидать ValueError
+        assert len(packed) <= MAX_PAYLOAD_LENGTH
+        assert len(packed.encode()) > MAX_PAYLOAD_LENGTH
+        assert CyrillicPayload.unpack(packed) == payload
+
+    def test_cyrillic_payload_over_character_limit_still_rejected(self) -> None:
+        class CyrillicPayload2(Payload, prefix="cyr2"):
+            data: str
+
+        cyrillic_str = "ё" * 1100  # 1100 символов > MAX_PAYLOAD_LENGTH
+
+        with pytest.raises(ValueError, match="Resulted callback data is too long"):
+            CyrillicPayload2(data=cyrillic_str).pack()
+
+    def test_pack_does_not_use_dataclasses_asdict(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Регрессия производительности: asdict рекурсивно копирует
+        # вложенные структуры на каждый pack() в hot-path сборки клавиатур.
+        def _boom(*args: object, **kwargs: object) -> None:
+            raise AssertionError("pack() must not call dataclasses.asdict")
+
+        monkeypatch.setattr(dataclasses, "asdict", _boom)
+
+        assert MyPayload(foo="test", bar=42).pack() == "test:test:42"
 
     def test_unsupported_type_in_pack(self) -> None:
         class UnsupportedPayload(Payload, prefix="uns"):
